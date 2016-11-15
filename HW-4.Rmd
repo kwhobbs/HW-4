@@ -1,6 +1,6 @@
 ---
 title: "MATH 216 Homework 4"
-author: "WRITE YOUR NAME HERE"
+author: "Katherine Hobbs"
 output:
   html_document:
     toc: true
@@ -16,6 +16,12 @@ library(USAboundaries)
 library(maptools)
 library(sp)
 library(broom)
+library(leaflet)
+library(dplyr)
+library(ggplot2)
+library(rgdal)
+library(readr)
+library(forcats)
 ```
 
 
@@ -24,13 +30,13 @@ library(broom)
 
 Please indicate
 
-* Who you collaborated with:
-* Roughly how much time you spent on this HW so far:
-* The URL of the RPubs published URL [here](https://www.nhl.com/).
+* Who you collaborated with: Amanda Hotvedt
+* Roughly how much time you spent on this HW so far: 5
+* The URL of the RPubs published URL [here](http://rpubs.com/khobbs/224852).
 * What gave you the most trouble:
 * Any comments you have:
 
-
+I feel good about my deliverable, but right now the final latitude and longitude values I am getting for my hub are not reasonable as they are too small and not on the map of the US. Therefore, I have put the hub at an arbitrary point for now. Also, we thought we eliminated any repeats in our final data set, but there are still some repeat county inputs we have to address. 
 
 ## Question 1:
 
@@ -44,6 +50,82 @@ which is marked on the map with a large red dot.
 ```{r, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=4.5}
 # Perform your computations here:
 
+Social_Explorer_Data <- read_csv("~/Desktop/Senior Year/Data Science/Homeworks/HW-4/R11276882_SL050.csv")
+ 
+Social_Explorer_Data <- Social_Explorer_Data %>%
+  rename(county_pop=SE_T001_001)
+
+Social_Explorer_Data <- Social_Explorer_Data%>% 
+  mutate(Geo_FIPS_char = as.character(Geo_FIPS))
+
+#Polygons data
+us_counties <- us_counties()
+us_counties_tidy <- tidy(us_counties, region="geoid")
+
+#Centroids
+
+centroids <- coordinates(us_counties) %>% 
+  tbl_df()
+
+#Meta data 
+us_counties_data <- us_counties@data
+
+#Join Centroid and US_Counties Data
+
+Counties_data_2 <- bind_cols(us_counties_data, centroids)
+
+#Join polygons and meta data
+us_counties_combined <- left_join(us_counties_tidy, Counties_data_2, by=c("id"="geoid"))
+
+counties_final <- left_join(us_counties_combined, Social_Explorer_Data, by=c("id" = "Geo_FIPS_char"))
+
+#Filter out unwanted states and county
+counties_final <- counties_final %>% 
+  mutate(county_name = name)
+
+counties_final <- counties_final %>% 
+  filter(state_name!= "Alaska") %>% 
+  filter(state_name!= "Hawaii") %>% 
+  filter(state_name!= "Puerto Rico") %>% 
+  filter(state_name!= "Guam") %>% 
+  filter(county_name != "Fairfax")
+
+#Select desired variables and eliminate repeat county inputs....unfortunately we realized that there are still some repeat counties!!
+
+FINAL <- counties_final %>% 
+  select(county_name, V1, V2, county_pop) %>% 
+  distinct(county_name, V1, V2, county_pop)
+
+#Find total USA population according to this data set
+FINAL %>% 
+  ungroup() %>% 
+  summarise(USA_pop = sum(county_pop))
+
+#Total US in this dataset= 202,756,834
+
+USA_pop <- 305355260
+
+#Find weighted means for latitute and longitude, weighted by county population
+
+FINAL <- FINAL %>% 
+  mutate(weighted_lat = county_pop*((V2)/USA_pop)) %>% 
+  mutate(weighted_long = county_pop*((V1)/USA_pop))
+
+#Find weighted mean lat and long values for the hub
+
+FINAL %>% 
+  ungroup() %>% 
+  summarise(hub_lat = mean(weighted_lat), hub_long = mean(weighted_long))
+
+#These values don't make sense as long or lat values.
+#So for now, I still have an arbitrary central point coded for the sake of showing the map.
+
+hub_lat <- 36
+
+hub_long <- -95
+
+counties_final  <- counties_final  %>% 
+  mutate(distance= (((lat - hub_lat)^2) + ((long - hub_long)^2))^(1/2))
 ```
 
 
@@ -51,16 +133,16 @@ which is marked on the map with a large red dot.
 # Here is a template of a ggplot call; feel free to change this to suit your
 # needs. Once your computations above are complete, set the eval=TRUE on the
 # line above to tell R Markdown to run this code block.
-ggplot(data=geo_data, aes(x=long, y=lat, group=group, fill=distance)) +
+ggplot(data=counties_final, aes(x=long, y=lat, group=group, fill=distance)) +
   # Plot choropleth polygons, low -> high being colored white -> dark green
   geom_polygon() +
-  scale_fill_gradient(low="white", high="darkgreen") + 
+  scale_fill_gradient(low="darkblue", high="white") + 
   # Trace outlines of areas
   geom_path(size=0.1) +
   # Mark hub
-  annotate("point", x=hub_x_coord, y=hub_y_coord, col="red", size=5) +
+  annotate("point", x=hub_long, y=hub_lat, col="red", size=3) +
   # Correct aspect ratio for map
-  coord_map()
+  coord_map(xlim=c(-130, -65),ylim=c(22,50))
 ```
 
 
